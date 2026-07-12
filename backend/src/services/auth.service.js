@@ -1,10 +1,11 @@
 import bcrypt from "bcrypt";
 import prisma from "../config/prisma.js";
 import generateToken from "../utils/generateToken.js";
+import ApiError from "../utils/ApiError.js";
 
 export const registerUser = async ({ name, email, password, phone }) => {
   if (!name || !email || !password) {
-    throw new Error("Name, email and password are required");
+    throw new ApiError(400, "Name, email and password are required");
   }
 
   const existingUser = await prisma.user.findUnique({
@@ -12,7 +13,7 @@ export const registerUser = async ({ name, email, password, phone }) => {
   });
 
   if (existingUser) {
-    throw new Error("Email already registered");
+    throw new ApiError(400, "Email already registered");
   }
 
   const hashedPassword = await bcrypt.hash(password, 10);
@@ -41,7 +42,7 @@ export const registerUser = async ({ name, email, password, phone }) => {
 };
 export const loginUser = async ({ email, password }) => {
   if (!email || !password) {
-    throw new Error("Email and password are required");
+    throw new ApiError(400, "Name, email and password are required");
   }
 
   const user = await prisma.user.findUnique({
@@ -49,13 +50,13 @@ export const loginUser = async ({ email, password }) => {
   });
 
   if (!user) {
-    throw new Error("Invalid email or password");
+    throw new ApiError(401, "Invalid email or password");
   }
 
   const isPasswordCorrect = await bcrypt.compare(password, user.password);
 
   if (!isPasswordCorrect) {
-    throw new Error("Invalid email or password");
+    throw new ApiError(401, "Invalid email or password");
   }
 
   const token = generateToken(user.id);

@@ -9,18 +9,208 @@ datasource db {
 
 enum UserRole {
   CUSTOMER
-  RESTAURANT
-  DELIVERY
+  RESTAURANT_OWNER
+  DELIVERY_PARTNER
   ADMIN
 }
 
 model User {
-  id        String   @id @default(cuid())
-  name      String
-  email     String   @unique
-  password  String
-  phone     String?  @unique
-  role      UserRole @default(CUSTOMER)
+  id       String   @id @default(cuid())
+  name     String
+  email    String   @unique
+  password String
+  phone    String?  @unique
+  role     UserRole @default(CUSTOMER)
+
+  restaurants Restaurant[]
+
+  cart    Cart?
+  orders  Order[]
+  reviews Review[]
+
+  deliveryOrders Order[]  @relation("DeliveryPartnerOrders")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model Restaurant {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+
+  phone String
+  email String?
+
+  address String
+  city    String
+  state   String
+  pincode String
+
+  logo       String?
+  coverImage String?
+
+  openingTime String
+  closingTime String
+
+  deliveryFee  Float @default(0)
+  minimumOrder Float @default(0)
+
+  rating Float @default(0)
+
+  isOpen     Boolean @default(true)
+  isVerified Boolean @default(false)
+
+  ownerId String
+  owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  orders  Order[]
+  reviews Review[]
+
+  categories Category[]
+  menuItems  MenuItem[]
+}
+
+model Category {
+  id   String @id @default(cuid())
+  name String
+
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  menuItems MenuItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model MenuItem {
+  id String @id @default(cuid())
+
+  name        String
+  description String?
+
+  price Float
+
+  image String?
+
+  isVeg Boolean @default(true)
+
+  isAvailable Boolean @default(true)
+
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Cart {
+  id String @id @default(cuid())
+
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  items CartItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CartItem {
+  id String @id @default(cuid())
+
+  quantity Int @default(1)
+
+  cartId String
+  cart   Cart   @relation(fields: [cartId], references: [id], onDelete: Cascade)
+
+  menuItemId String
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PREPARING
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+}
+
+model Order {
+  id String @id @default(cuid())
+
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  restaurantId String
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  deliveryPartnerId String?
+
+  deliveryPartner User? @relation("DeliveryPartnerOrders", fields: [deliveryPartnerId], references: [id])
+
+  items OrderItem[]
+
+  totalAmount Float
+
+  deliveryAddress String
+
+  paymentId String?
+  paymentOrderId String?
+
+  paymentMethod String
+
+  paymentStatus Boolean @default(false)
+
+  status OrderStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model OrderItem {
+  id String @id @default(cuid())
+
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  menuItemId String
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
+
+  quantity Int
+
+  price Float
+
+  createdAt DateTime @default(now())
+}
+
+model Review {
+  id String @id @default(cuid())
+
+  rating  Int
+  comment String?
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, restaurantId])
 }

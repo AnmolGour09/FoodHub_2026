@@ -98,6 +98,49 @@ export const getMyOrders = async (userId) => {
   });
 };
 
+export const getRestaurantOrders = async (ownerId) => {
+  const restaurant = await prisma.restaurant.findFirst({
+    where: {
+      ownerId,
+    },
+  });
+
+  if (!restaurant) {
+    throw new ApiError(404, "Restaurant not found");
+  }
+
+  const orders = await prisma.order.findMany({
+    where: {
+      restaurantId: restaurant.id,
+    },
+    include: {
+      user: {
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+        },
+      },
+      items: {
+        include: {
+          menuItem: {
+            select: {
+              id: true,
+              name: true,
+              price: true,
+            },
+          },
+        },
+      },
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+  });
+
+  return orders;
+};
+
 export const getOrderById = async (orderId, userId) => {
   const order = await prisma.order.findFirst({
     where: {
@@ -126,6 +169,7 @@ export const updateOrderStatus = async (orderId, status) => {
     "PENDING",
     "CONFIRMED",
     "PREPARING",
+    "READY",
     "OUT_FOR_DELIVERY",
     "DELIVERED",
     "CANCELLED",
@@ -145,13 +189,24 @@ export const updateOrderStatus = async (orderId, status) => {
     throw new ApiError(404, "Order not found");
   }
 
+  // Build update data
+  const updateData = {
+    status,
+  };
+
+  // If COD order is delivered, mark payment as paid
+  if (
+    order.paymentMethod === "COD" &&
+    status === "DELIVERED"
+  ) {
+    updateData.paymentStatus = true;
+  }
+
   return await prisma.order.update({
     where: {
       id: orderId,
     },
-    data: {
-      status,
-    },
+    data: updateData,
   });
 };
 

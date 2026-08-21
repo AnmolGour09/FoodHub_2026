@@ -2,37 +2,51 @@ import prisma from "../config/prisma.js";
 import ApiError from "../utils/ApiError.js";
 
 // Create Menu Item
-export const createMenuItem = async (data) => {
-  const {
-    name,
-    description,
-    price,
-    image,
-    isVeg,
-    categoryId,
-    restaurantId,
-  } = data;
+export const createMenuItem = async ({
+  name,
+  description,
+  price,
+  image,
+  isVeg,
+  isAvailable,
+  categoryId,
+  ownerId,
+}) => {
 
-  if (!name || !price || !categoryId || !restaurantId) {
-    throw new ApiError(400, "Missing required fields");
+  if (!name || !price || !categoryId) {
+    throw new ApiError(400, "Name, price and category are required");
   }
 
-  // Check Restaurant
-  const restaurant = await prisma.restaurant.findUnique({
-    where: { id: restaurantId },
+  const restaurant = await prisma.restaurant.findFirst({
+    where: {
+      ownerId,
+    },
   });
 
   if (!restaurant) {
     throw new ApiError(404, "Restaurant not found");
   }
 
-  // Check Category
-  const category = await prisma.category.findUnique({
-    where: { id: categoryId },
+  const category = await prisma.category.findFirst({
+    where: {
+      id: categoryId,
+      restaurantId: restaurant.id,
+    },
   });
 
   if (!category) {
     throw new ApiError(404, "Category not found");
+  }
+
+  const existingItem = await prisma.menuItem.findFirst({
+    where: {
+      restaurantId: restaurant.id,
+      name,
+    },
+  });
+
+  if (existingItem) {
+    throw new ApiError(409, "Menu item already exists");
   }
 
   const menuItem = await prisma.menuItem.create({
@@ -42,12 +56,157 @@ export const createMenuItem = async (data) => {
       price: Number(price),
       image,
       isVeg,
+      isAvailable,
       categoryId,
-      restaurantId,
+      restaurantId: restaurant.id,
     },
   });
 
   return menuItem;
+};
+
+export const getRestaurantMenu = async (ownerId) => {
+
+  const restaurant = await prisma.restaurant.findFirst({
+    where: {
+      ownerId,
+    },
+  });
+
+  if (!restaurant) {
+    throw new ApiError(404, "Restaurant not found");
+  }
+
+  const menu = await prisma.menuItem.findMany({
+    where: {
+      restaurantId: restaurant.id,
+    },
+    include: {
+      category: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+  });
+
+  return menu;
+};
+
+export const updateMenuItem = async ({
+  menuItemId,
+  ownerId,
+  name,
+  description,
+  price,
+  image,
+  isVeg,
+  isAvailable,
+  categoryId,
+}) => {
+
+  const restaurant = await prisma.restaurant.findFirst({
+    where: {
+      ownerId,
+    },
+  });
+
+  if (!restaurant) {
+    throw new ApiError(404, "Restaurant not found");
+  }
+
+  const menuItem = await prisma.menuItem.findFirst({
+    where: {
+      id: menuItemId,
+      restaurantId: restaurant.id,
+    },
+  });
+
+  if (!menuItem) {
+    throw new ApiError(404, "Menu item not found");
+  }
+
+  if (categoryId) {
+    const category = await prisma.category.findFirst({
+      where: {
+        id: categoryId,
+        restaurantId: restaurant.id,
+      },
+    });
+
+    if (!category) {
+      throw new ApiError(404, "Category not found");
+    }
+  }
+
+  if (name) {
+    const existingItem = await prisma.menuItem.findFirst({
+      where: {
+        restaurantId: restaurant.id,
+        name,
+        NOT: {
+          id: menuItemId,
+        },
+      },
+    });
+
+    if (existingItem) {
+      throw new ApiError(409, "Menu item already exists");
+    }
+  }
+
+  const updatedMenu = await prisma.menuItem.update({
+    where: {
+      id: menuItemId,
+    },
+    data: {
+      name,
+      description,
+      price: price !== undefined ? Number(price) : undefined,
+      image,
+      isVeg,
+      isAvailable,
+      categoryId,
+    },
+  });
+
+  return updatedMenu;
+};
+
+export const deleteMenuItem = async ({ menuItemId, ownerId }) => {
+
+  const restaurant = await prisma.restaurant.findFirst({
+    where: {
+      ownerId,
+    },
+  });
+
+  if (!restaurant) {
+    throw new ApiError(404, "Restaurant not found");
+  }
+
+  const menuItem = await prisma.menuItem.findFirst({
+    where: {
+      id: menuItemId,
+      restaurantId: restaurant.id,
+    },
+  });
+
+  if (!menuItem) {
+    throw new ApiError(404, "Menu item not found");
+  }
+
+  await prisma.menuItem.delete({
+    where: {
+      id: menuItemId,
+    },
+  });
+
+  return null;
 };
 
 // Search Menu Items

@@ -51,6 +51,7 @@ export const getAllRestaurants = async ({
   page = 1,
   limit = 10,
   sort = "rating",
+  category,
 }) => {
   const skip = (page - 1) * limit;
 
@@ -59,17 +60,37 @@ export const getAllRestaurants = async ({
       ? { createdAt: "desc" }
       : { rating: "desc" };
 
+  const where = {
+    isVerified: true,
+    isOpen: true,
+  };
+
+  // Safe category filter (handles undefined, empty string, and whitespace)
+  if (category && category.trim() !== "") {
+    where.categories = {
+      some: {
+        name: {
+          equals: category.trim(),
+          mode: "insensitive",
+        },
+      },
+    };
+  }
+
   const restaurants = await prisma.restaurant.findMany({
-    where: {
-      isVerified: true,
-      isOpen: true,
-    },
+    where,
     include: {
       owner: {
         select: {
           id: true,
           name: true,
           email: true,
+        },
+      },
+      categories: {
+        select: {
+          id: true,
+          name: true,
         },
       },
     },
@@ -79,10 +100,7 @@ export const getAllRestaurants = async ({
   });
 
   const total = await prisma.restaurant.count({
-    where: {
-      isVerified: true,
-      isOpen: true,
-    },
+    where,
   });
 
   return {
@@ -93,26 +111,51 @@ export const getAllRestaurants = async ({
   };
 };
 
-export const searchRestaurants = async (query) => {
-  return await prisma.restaurant.findMany({
-    where: {
-      isOpen: true,
-      isVerified: true,
+export const searchRestaurants = async ({
+  query = "",
+  category = "",
+}) => {
+  const andFilters = [];
+
+  if (query && query.trim() !== "") {
+    andFilters.push({
       OR: [
         {
           name: {
-            contains: query,
+            contains: query.trim(),
             mode: "insensitive",
           },
         },
         {
           city: {
-            contains: query,
+            contains: query.trim(),
             mode: "insensitive",
           },
         },
       ],
+    });
+  }
+
+  if (category && category.trim() !== "") {
+    andFilters.push({
+      categories: {
+        some: {
+          name: {
+            equals: category.trim(),
+            mode: "insensitive",
+          },
+        },
+      },
+    });
+  }
+
+  return await prisma.restaurant.findMany({
+    where: {
+      isOpen: true,
+      isVerified: true,
+      ...(andFilters.length > 0 && { AND: andFilters }),
     },
+
     include: {
       owner: {
         select: {
@@ -120,14 +163,19 @@ export const searchRestaurants = async (query) => {
           name: true,
         },
       },
+
+      categories: {
+        select: {
+          name: true,
+        },
+      },
     },
+
     orderBy: {
       rating: "desc",
     },
   });
 };
-
-
 
 export const getRestaurantById = async (restaurantId) => {
   const restaurant = await prisma.restaurant.findUnique({

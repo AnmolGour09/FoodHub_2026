@@ -22,13 +22,20 @@ export const registerRestaurant = asyncHandler(async (req, res) => {
 });
 
 // Get All Restaurants
+// Get All Restaurants
 export const getRestaurants = asyncHandler(async (req, res) => {
-  const { page = 1, limit = 10, sort = "rating" } = req.query;
+  const {
+    page = 1,
+    limit = 10,
+    sort = "rating",
+    category,
+  } = req.query;
 
   const restaurants = await getAllRestaurants({
     page: Number(page),
     limit: Number(limit),
     sort,
+    category,
   });
 
   res.status(200).json(
@@ -40,7 +47,7 @@ export const getRestaurants = asyncHandler(async (req, res) => {
   );
 });
 
-export const getRestaurant = asyncHandler(async (req, res) => {
+export const getRestaurant = asyncHandler(async (req, res) => { 
   const restaurant = await getRestaurantById(req.params.id);
 
   res.status(200).json(
@@ -53,9 +60,12 @@ export const getRestaurant = asyncHandler(async (req, res) => {
 });
 
 export const searchRestaurant = asyncHandler(async (req, res) => {
-  const { q } = req.query;
+  const { q, category } = req.query;
 
-  const restaurants = await searchRestaurants(q);
+  const restaurants = await searchRestaurants({
+    query: q,
+    category,
+  });
 
   res.status(200).json(
     new ApiResponse(

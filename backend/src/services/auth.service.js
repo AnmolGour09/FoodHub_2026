@@ -42,7 +42,7 @@ export const registerUser = async ({ name, email, password, phone }) => {
 };
 export const loginUser = async ({ email, password }) => {
   if (!email || !password) {
-    throw new ApiError(400, "Name, email and password are required");
+    throw new ApiError(400, "Email and password are required");
   }
 
   const user = await prisma.user.findUnique({

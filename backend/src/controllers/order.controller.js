@@ -3,11 +3,11 @@ import ApiResponse from "../utils/ApiResponse.js";
 import {
   placeOrder,
   getMyOrders,
+  getRestaurantOrders,
   getOrderById,
   updateOrderStatus,
   cancelOrder,
 } from "../services/order.service.js";
-
 
 export const createOrder = asyncHandler(async (req, res) => {
   const order = await placeOrder(req.user.id, req.body);
@@ -32,6 +32,20 @@ export const getOrders = asyncHandler(async (req, res) => {
     )
   );
 });
+
+export const getRestaurantOrdersList = asyncHandler(
+  async (req, res) => {
+    const orders = await getRestaurantOrders(req.user.id);
+
+    res.status(200).json(
+      new ApiResponse(
+        200,
+        "Restaurant orders fetched successfully",
+        orders
+      )
+    );
+  }
+);
 
 export const getOrder = asyncHandler(async (req, res) => {
   const order = await getOrderById(
@@ -76,6 +90,19 @@ export const cancelMyOrder = asyncHandler(async (req, res) => {
       200,
       "Order cancelled successfully",
       order
+    )
+  );
+});
+
+export const restaurantOrders = asyncHandler(async (req, res) => {
+
+  const orders = await getRestaurantOrders(req.user.id);
+
+  res.status(200).json(
+    new ApiResponse(
+      200,
+      "Restaurant orders fetched successfully",
+      orders
     )
   );
 });

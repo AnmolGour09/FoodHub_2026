@@ -6,6 +6,7 @@ import {
   getOrders,
   getOrder,
   changeOrderStatus,
+  restaurantOrders,
   cancelMyOrder,
 } from "../controllers/order.controller.js";
 
@@ -14,6 +15,12 @@ const router = express.Router();
 router.post("/", protect, createOrder);
 
 router.get("/", protect, getOrders);
+router.get(
+  "/restaurant",
+  protect,
+  authorize("RESTAURANT_OWNER", "ADMIN"),
+  restaurantOrders
+);
 
 router.get("/:id", protect, getOrder);
 

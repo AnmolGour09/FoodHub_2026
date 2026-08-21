@@ -6,10 +6,14 @@ import asyncHandler from "../utils/asyncHandler.js";
 export const protect = asyncHandler(async (req, res, next) => {
   let token;
 
+  console.log(req.headers.authorization);
+
   const authHeader = req.headers.authorization;
 
   if (authHeader && authHeader.startsWith("Bearer ")) {
     token = authHeader.split(" ")[1];
+    console.log("TOKEN:");
+console.log(token);
   }
 
   if (!token) {

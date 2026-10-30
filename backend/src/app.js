@@ -1,74 +1,3 @@
-// import express from "express";
-// import cors from "cors";
-// import cookieParser from "cookie-parser";
-// import authRoutes from "./routes/auth.routes.js";
-// import errorHandler from "./middleware/error.middleware.js";
-// import restaurantRoutes from "./routes/restaurant.routes.js";
-// import categoryRoutes from "./routes/category.routes.js";
-// import menuRoutes from "./routes/menu.routes.js";
-// import cartRoutes from "./routes/cart.routes.js";
-// import orderRoutes from "./routes/order.routes.js";
-// import reviewRoutes from "./routes/review.routes.js";
-// import deliveryRoutes from "./routes/delivery.routes.js";
-// import paymentRoutes from "./routes/payment.routes.js";
-// import restaurantAuthRoutes from "./routes/restaurantAuth.routes.js";
-// import dashboardRoutes from "./routes/dashboard.routes.js";
-// import restaurantProfileRoutes from "./routes/restaurantProfile.routes.js";
-
-
-// const app = express();
-
-// // Middlewares
-// app.use(
-//   cors({
-//     origin: [
-//       "http://localhost:5173",
-//       "http://localhost:5174",
-//       "http://localhost:5175",
-//     ],
-//     credentials: true,
-//   })
-// );
-// app.use(express.json({
-//   strict: false
-// }));
-// app.use(express.urlencoded({ extended: true }));
-// app.use(cookieParser());
-// app.use("/api/auth", authRoutes);
-// app.use("/api/auth/restaurant", restaurantAuthRoutes);
-// app.use("/api/restaurants", restaurantRoutes);
-// app.use("/api/restaurant/profile", restaurantProfileRoutes);
-// app.use("/api/categories", categoryRoutes);
-// app.use("/api/menu", menuRoutes);
-// app.use("/api/cart", cartRoutes);
-// app.use("/api/orders", orderRoutes);
-// app.use("/api/reviews", reviewRoutes);
-// app.use("/api/delivery", deliveryRoutes);
-// app.use("/api/payment", paymentRoutes);
-// app.use("/api/dashboard", dashboardRoutes);
-
-
-// // Health Check Route
-
-// app.use((req, res, next) => {
-//   console.log("REQUEST:", req.method, req.url);
-//   next();
-// });
-
-// app.get("/", (req, res) => {
-//   res.status(200).json({
-//     success: true,
-//     message: "FoodHub API is running 🚀",
-//   });
-// });
-
-// app.use((err, req, res, next) => {
-//   console.log("BODY PARSER ERROR");
-//   console.log(err);
-
-//   next(err);
-// });
-
 
 import express from "express";
 import cors from "cors";
@@ -92,30 +21,29 @@ const app = express();
 
 // Allowed frontend origins
 const allowedOrigins = [
+  // Local development
   "http://localhost:5173",
   "http://localhost:5174",
   "http://localhost:5175",
 
+  // Customer frontend
   "https://food-hub-2026.vercel.app",
   "https://customer-ruby-five.vercel.app",
   "https://customer-ysam.vercel.app",
   "https://customer-git-main-gouranmol7276-8664s-projects.vercel.app",
+
+  // Restaurant frontend
+  "https://food-hub-2026-of48.vercel.app",
 ];
 
-// CORS middleware: must run before API routes
+// CORS middleware MUST run before API routes
 app.use(
   cors({
-    origin: (origin, callback) => {
-      // Allow requests without an Origin header, e.g. server-to-server.
-      if (!origin || allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-
-      return callback(new Error(`CORS blocked origin: ${origin}`));
-    },
+    origin: allowedOrigins,
     credentials: true,
     methods: [
       "GET",
+      "HEAD",
       "POST",
       "PUT",
       "PATCH",
@@ -126,17 +54,22 @@ app.use(
       "Content-Type",
       "Authorization",
     ],
+    optionsSuccessStatus: 204,
   })
 );
 
-// Request body and cookie parsing
+// Parse request bodies and cookies
 app.use(express.json({ strict: false }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
 // Request logging
 app.use((req, res, next) => {
-  console.log("REQUEST:", req.method, req.url);
+  console.log(
+    `[${new Date().toISOString()}] ${req.method} ${req.originalUrl}`,
+    "| Origin:",
+    req.headers.origin || "none"
+  );
   next();
 });
 
@@ -162,21 +95,31 @@ app.use("/api/delivery", deliveryRoutes);
 app.use("/api/payment", paymentRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 
-// Body parser error logging
-app.use((err, req, res, next) => {
-  if (err.type === "entity.parse.failed") {
-    console.error("BODY PARSER ERROR:", err.message);
-  }
-
-  next(err);
+// Handle unknown routes
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: `Route not found: ${req.method} ${req.originalUrl}`,
+  });
 });
 
-// Central error handler
-app.use(errorHandler);
+// Central error handler - keep this last
+app.use((err, req, res, next) => {
+  console.error("Backend error:", err);
+
+  if (res.headersSent) {
+    return next(err);
+  }
+
+  const statusCode = err.status || err.statusCode || 500;
+
+  res.status(statusCode).json({
+    success: false,
+    message:
+      statusCode >= 500
+        ? "Internal server error"
+        : err.message || "Request failed",
+  });
+});
 
 export default app;
-
-
-// app.use(errorHandler);
-
-// export default app;

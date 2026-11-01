@@ -1,37 +1,27 @@
-// import axios from "axios";
-
-// const API = axios.create({
-//   baseURL: "http://localhost:5000/api",
-// });
-
-// API.interceptors.request.use((config) => {
-//   const token = localStorage.getItem("restaurantToken");
-
-//   if (token) {
-//     config.headers.Authorization = `Bearer ${token}`;
-//   }
-
-//   return config;
-// });
-
-// export default API;
-
 
 import axios from "axios";
 
+const API_URL = import.meta.env.VITE_API_URL;
+
 const API = axios.create({
-  baseURL: `${import.meta.env.VITE_API_URL}/api`,
+  baseURL: `${API_URL?.replace(/\/+$/, "")}/api`,
+  headers: {
+    "Content-Type": "application/json",
+  },
 });
 
-API.interceptors.request.use((config) => {
-  const token = localStorage.getItem("restaurantToken");
+API.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem("restaurantToken");
 
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
 
-  return config;
-});
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
 
 API.interceptors.response.use(
   (response) => response,
@@ -39,11 +29,16 @@ API.interceptors.response.use(
     if (error.response?.status === 401) {
       localStorage.removeItem("restaurantToken");
 
-      // Redirect only if the restaurant session has expired.
-      window.location.href = "/restaurant/login";
+      // Avoid redirecting repeatedly if already on a login page.
+      const currentPath = window.location.pathname;
+
+      if (currentPath !== "/" && currentPath !== "/login") {
+        window.location.href = "/login";
+      }
     }
 
     return Promise.reject(error);
   }
 );
+
 export default API;

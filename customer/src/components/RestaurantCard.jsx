@@ -25,13 +25,13 @@ function RestaurantCard({ restaurant }) {
       {/* Image */}
       <div className="relative overflow-hidden h-48 sm:h-56 lg:h-60">
         <img
-          src={
-            restaurant.image ||
-            "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=1200"
-          }
-          alt={restaurant.name}
-          className="w-full h-full object-cover group-hover:scale-110 transition duration-500"
-        />
+  src={restaurant.logo || "/default-restaurant.png"}
+  alt={restaurant.name}
+  onError={(event) => {
+    event.currentTarget.onerror = null;
+    event.currentTarget.src = "/default-restaurant.png";
+  }}
+/>
 
         {/* Rating */}
         <div className="absolute top-3 right-3 bg-green-600 text-white px-2.5 py-1 rounded-lg flex items-center gap-1 text-xs sm:text-sm font-semibold shadow">

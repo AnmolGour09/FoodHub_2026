@@ -33,4 +33,17 @@ API.interceptors.request.use((config) => {
   return config;
 });
 
+API.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem("restaurantToken");
+
+      // Redirect only if the restaurant session has expired.
+      window.location.href = "/restaurant/login";
+    }
+
+    return Promise.reject(error);
+  }
+);
 export default API;

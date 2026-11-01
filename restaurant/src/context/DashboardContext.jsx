@@ -1,19 +1,60 @@
-import { createContext, useContext, useEffect, useState } from "react";
+
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useCallback,
+} from "react";
+
 import { getDashboard } from "../services/dashboard.service";
 
 const DashboardContext = createContext();
 
-export const DashboardProvider = ({ children }) => {
-  const [dashboard, setDashboard] = useState(null);
+const STORAGE_KEY = "restaurantDashboard";
 
-  const refreshDashboard = async () => {
+export const DashboardProvider = ({ children }) => {
+  // Load previous dashboard data immediately
+  const [dashboard, setDashboard] = useState(() => {
     try {
-      const data = await getDashboard();
-      setDashboard(data);
-    } catch (error) {
-      console.log(error);
+      const cached = sessionStorage.getItem(STORAGE_KEY);
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
     }
-  };
+  });
+
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const refreshDashboard = useCallback(async () => {
+    try {
+      setError(null);
+
+      // Only show loading when no cached data exists
+      if (!dashboard) {
+        setLoading(true);
+      }
+
+      const data = await getDashboard();
+
+      setDashboard(data);
+
+      // Save latest successful dashboard data
+      sessionStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify(data)
+      );
+
+    } catch (error) {
+      console.error("Dashboard Error:", error);
+
+      setError(error.message);
+
+    } finally {
+      setLoading(false);
+    }
+  }, [dashboard]);
 
   useEffect(() => {
     refreshDashboard();
@@ -23,6 +64,8 @@ export const DashboardProvider = ({ children }) => {
     <DashboardContext.Provider
       value={{
         dashboard,
+        loading,
+        error,
         refreshDashboard,
       }}
     >

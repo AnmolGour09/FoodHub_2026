@@ -1,76 +1,134 @@
+
 import prisma from "../config/prisma.js";
 import ApiError from "../utils/ApiError.js";
 
-
+// ==========================================
+// PLACE ORDER
+// ==========================================
 export const placeOrder = async (userId, orderData) => {
-  const { deliveryAddress, paymentMethod } = orderData;
+  const deliveryAddress = orderData?.deliveryAddress?.trim();
+  const paymentMethod = orderData?.paymentMethod;
 
-  if (!deliveryAddress || !paymentMethod) {
-    throw new ApiError(
-      400,
-      "Delivery address and payment method are required"
-    );
+  // Validate delivery address
+  if (!deliveryAddress || deliveryAddress.length < 5) {
+    throw new ApiError(400, "Please provide a valid delivery address");
   }
 
-  const cart = await prisma.cart.findUnique({
-    where: { userId },
-    include: {
-      items: {
-        include: {
-          menuItem: true,
+  // Validate payment method
+  if (!["COD", "ONLINE"].includes(paymentMethod)) {
+    throw new ApiError(400, "Please select a valid payment method");
+  }
+
+  // Create order and clear cart atomically
+  const order = await prisma.$transaction(async (tx) => {
+
+    // Fetch user's cart
+    const cart = await tx.cart.findUnique({
+      where: { userId },
+      include: {
+        items: {
+          include: {
+            menuItem: true,
+          },
         },
       },
-    },
-  });
+    });
 
-  if (!cart || cart.items.length === 0) {
-    throw new ApiError(400, "Cart is empty");
-  }
+    if (!cart || cart.items.length === 0) {
+      throw new ApiError(400, "Your cart is empty");
+    }
 
-  let totalAmount = 0;
+    // Validate menu items
+    for (const item of cart.items) {
+      if (!item.menuItem) {
+        throw new ApiError(400, "One or more menu items are unavailable");
+      }
 
-  const orderItemsData = cart.items.map((item) => {
-    totalAmount += item.quantity * item.menuItem.price;
+      if (item.quantity <= 0 || !Number.isFinite(item.quantity)) {
+        throw new ApiError(400, "Invalid item quantity");
+      }
 
-    return {
+      if (
+        !Number.isFinite(Number(item.menuItem.price)) ||
+        Number(item.menuItem.price) < 0
+      ) {
+        throw new ApiError(400, "Invalid menu item price");
+      }
+    }
+
+    // Current order model supports one restaurant per order.
+    const restaurantId = cart.items[0].menuItem.restaurantId;
+
+    const hasMultipleRestaurants = cart.items.some(
+      (item) => item.menuItem.restaurantId !== restaurantId
+    );
+
+    if (hasMultipleRestaurants) {
+      throw new ApiError(
+        400,
+        "Please order from one restaurant at a time"
+      );
+    }
+
+    // Calculate total using paise to avoid floating-point errors.
+    const totalPaise = cart.items.reduce((total, item) => {
+      const pricePaise = Math.round(
+        Number(item.menuItem.price) * 100
+      );
+
+      return total + pricePaise * item.quantity;
+    }, 0);
+
+    const totalAmount = totalPaise / 100;
+
+    // Prepare order items
+    const orderItemsData = cart.items.map((item) => ({
       quantity: item.quantity,
       price: item.menuItem.price,
       menuItemId: item.menuItem.id,
-    };
-  });
+    }));
 
-  const restaurantId = cart.items[0].menuItem.restaurantId;
+    // Create order
+    const newOrder = await tx.order.create({
+      data: {
+        userId,
+        restaurantId,
+        totalAmount,
+        deliveryAddress,
+        paymentMethod,
 
-  const order = await prisma.order.create({
-    data: {
-      userId,
-      restaurantId,
-      totalAmount,
-      deliveryAddress,
-      paymentMethod,
-      items: {
-        create: orderItemsData,
+        items: {
+          create: orderItemsData,
+        },
       },
-    },
-    include: {
-      items: true,
-    },
-  });
 
-  await prisma.cartItem.deleteMany({
-    where: {
-      cartId: cart.id,
-    },
+      include: {
+        items: true,
+      },
+    });
+
+    // Clear cart only after successful order creation.
+    await tx.cartItem.deleteMany({
+      where: {
+        cartId: cart.id,
+      },
+    });
+
+    return newOrder;
   });
 
   return order;
 };
 
+// ==========================================
+// GET CUSTOMER ORDERS
+// ==========================================
 export const getMyOrders = async (userId) => {
-  return await prisma.order.findMany({
+  return prisma.order.findMany({
     where: {
       userId,
     },
+
     include: {
       restaurant: {
         select: {
@@ -79,6 +137,7 @@ export const getMyOrders = async (userId) => {
           logo: true,
         },
       },
+
       items: {
         include: {
           menuItem: {
@@ -92,12 +151,16 @@ export const getMyOrders = async (userId) => {
         },
       },
     },
+
     orderBy: {
       createdAt: "desc",
     },
   });
 };
 
+// ==========================================
+// GET RESTAURANT ORDERS
+// ==========================================
 export const getRestaurantOrders = async (ownerId) => {
   const restaurant = await prisma.restaurant.findFirst({
     where: {
@@ -109,10 +172,11 @@ export const getRestaurantOrders = async (ownerId) => {
     throw new ApiError(404, "Restaurant not found");
   }
 
-  const orders = await prisma.order.findMany({
+  return prisma.order.findMany({
     where: {
       restaurantId: restaurant.id,
     },
+
     include: {
       user: {
         select: {
@@ -121,6 +185,7 @@ export const getRestaurantOrders = async (ownerId) => {
           phone: true,
         },
       },
+
       items: {
         include: {
           menuItem: {
@@ -133,22 +198,26 @@ export const getRestaurantOrders = async (ownerId) => {
         },
       },
     },
+
     orderBy: {
       createdAt: "desc",
     },
   });
-
-  return orders;
 };
 
+// ==========================================
+// GET ORDER BY ID
+// ==========================================
 export const getOrderById = async (orderId, userId) => {
   const order = await prisma.order.findFirst({
     where: {
       id: orderId,
       userId,
     },
+
     include: {
       restaurant: true,
+
       items: {
         include: {
           menuItem: true,
@@ -164,6 +233,9 @@ export const getOrderById = async (orderId, userId) => {
   return order;
 };
 
+// ==========================================
+// UPDATE ORDER STATUS
+// ==========================================
 export const updateOrderStatus = async (orderId, status) => {
   const validStatus = [
     "PENDING",
@@ -189,27 +261,27 @@ export const updateOrderStatus = async (orderId, status) => {
     throw new ApiError(404, "Order not found");
   }
 
-  // Build update data
   const updateData = {
     status,
   };
 
-  // If COD order is delivered, mark payment as paid
-  if (
-    order.paymentMethod === "COD" &&
-    status === "DELIVERED"
-  ) {
+  // COD payment becomes paid after delivery.
+  if (order.paymentMethod === "COD" && status === "DELIVERED") {
     updateData.paymentStatus = true;
   }
 
-  return await prisma.order.update({
+  return prisma.order.update({
     where: {
       id: orderId,
     },
+
     data: updateData,
   });
 };
 
+// ==========================================
+// CANCEL CUSTOMER ORDER
+// ==========================================
 export const cancelOrder = async (orderId, userId) => {
   const order = await prisma.order.findFirst({
     where: {
@@ -222,20 +294,15 @@ export const cancelOrder = async (orderId, userId) => {
     throw new ApiError(404, "Order not found");
   }
 
-  if (
-    order.status !== "PENDING" &&
-    order.status !== "CONFIRMED"
-  ) {
-    throw new ApiError(
-      400,
-      "Order cannot be cancelled"
-    );
+  if (!["PENDING", "CONFIRMED"].includes(order.status)) {
+    throw new ApiError(400, "Order cannot be cancelled");
   }
 
-  return await prisma.order.update({
+  return prisma.order.update({
     where: {
       id: orderId,
     },
+
     data: {
       status: "CANCELLED",
     },

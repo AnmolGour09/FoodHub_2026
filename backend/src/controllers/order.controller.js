@@ -9,8 +9,39 @@ import {
   cancelOrder,
 } from "../services/order.service.js";
 
+
 export const createOrder = asyncHandler(async (req, res) => {
-  const order = await placeOrder(req.user.id, req.body);
+  const { deliveryAddress, paymentMethod } = req.body;
+
+  if (
+    !deliveryAddress ||
+    typeof deliveryAddress !== "string" ||
+    !deliveryAddress.trim() ||
+    !paymentMethod
+  ) {
+    return res.status(400).json(
+      new ApiResponse(
+        400,
+        "Delivery address and payment method are required",
+        null
+      )
+    );
+  }
+
+  if (!["COD", "ONLINE"].includes(paymentMethod)) {
+    return res.status(400).json(
+      new ApiResponse(
+        400,
+        "Invalid payment method",
+        null
+      )
+    );
+  }
+
+  const order = await placeOrder(req.user.id, {
+    deliveryAddress: deliveryAddress.trim(),
+    paymentMethod,
+  });
 
   res.status(201).json(
     new ApiResponse(
@@ -20,6 +51,7 @@ export const createOrder = asyncHandler(async (req, res) => {
     )
   );
 });
+
 
 export const getOrders = asyncHandler(async (req, res) => {
   const orders = await getMyOrders(req.user.id);

@@ -16,6 +16,7 @@ import paymentRoutes from "./routes/payment.routes.js";
 import restaurantAuthRoutes from "./routes/restaurantAuth.routes.js";
 import dashboardRoutes from "./routes/dashboard.routes.js";
 import restaurantProfileRoutes from "./routes/restaurantProfile.routes.js";
+import restaurantImageRoutes from "./routes/restaurantImage.routes.js";
 
 const app = express();
 
@@ -94,6 +95,7 @@ app.use("/api/reviews", reviewRoutes);
 app.use("/api/delivery", deliveryRoutes);
 app.use("/api/payment", paymentRoutes);
 app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/restaurant-image", restaurantImageRoutes);
 
 // Handle unknown routes
 app.use((req, res) => {

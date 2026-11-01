@@ -1,38 +1,38 @@
-import jwt from "jsonwebtoken";
-import prisma from "../config/prisma.js";
-import ApiError from "../utils/ApiError.js";
-import asyncHandler from "../utils/asyncHandler.js";
 
-export const protect = asyncHandler(async (req, res, next) => {
-  let token;
+  import jwt from "jsonwebtoken";
+  import prisma from "../config/prisma.js";
+  import ApiError from "../utils/ApiError.js";
+  import asyncHandler from "../utils/asyncHandler.js";
 
-  console.log(req.headers.authorization);
+  export const protect = asyncHandler(async (req, res, next) => {
+    const authHeader = req.headers.authorization;
 
-  const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      throw new ApiError(401, "Access denied. Please login again.");
+    }
 
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    token = authHeader.split(" ")[1];
-    console.log("TOKEN:");
-console.log(token);
-  }
+    const token = authHeader.split(" ")[1];
 
-  if (!token) {
-    throw new ApiError(401, "Access denied. No token provided.");
-  }
+    let decoded;
 
-  const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (error) {
+      if (error.name === "TokenExpiredError") {
+        throw new ApiError(401, "Session expired. Please login again.");
+      }
 
-  const user = await prisma.user.findUnique({
-    where: {
-      id: decoded.id,
-    },
+      throw new ApiError(401, "Invalid authentication token.");
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.id },
+    });
+
+    if (!user) {
+      throw new ApiError(401, "User not found. Please login again.");
+    }
+
+    req.user = user;
+    next();
   });
-
-  if (!user) {
-    throw new ApiError(401, "User not found.");
-  }
-
-  req.user = user;
-
-  next();
-});

@@ -1,4 +1,5 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+
+import { useEffect, useState, useCallback } from "react";
 
 import Hero from "../components/Hero";
 import CategorySlider from "../components/CategorySlider";
@@ -10,51 +11,115 @@ import {
   searchRestaurants,
 } from "../services/restaurant.service";
 
-/* ---------------- Time Helpers ---------------- */
+/* -----------------------------------------
+   Shared cache survives Home unmounting
+----------------------------------------- */
+
+const categoryCache = new Map();
+let homeScrollPosition = 0;
+
+/* -----------------------------------------
+   Time helpers
+----------------------------------------- */
 
 const parseToMinutes = (timeStr) => {
-  if (!timeStr) return 0;
+  if (!timeStr) return null;
+
   const value = timeStr.trim();
-  if (value.toUpperCase().includes("AM") || value.toUpperCase().includes("PM")) {
-    const [time, modifier] = value.split(" ");
-    let [hours, minutes] = time.split(":").map(Number);
-    if (modifier.toUpperCase() === "PM" && hours !== 12) hours += 12;
-    if (modifier.toUpperCase() === "AM" && hours === 12) hours = 0;
-    return hours * 60 + minutes;
+  const match = value.match(
+    /^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i
+  );
+
+  if (!match) return null;
+
+  let hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  const modifier = match[3]?.toUpperCase();
+
+  if (
+    minutes > 59 ||
+    hours > (modifier ? 12 : 23) ||
+    (modifier && hours < 1)
+  ) {
+    return null;
   }
-  const [hours, minutes] = value.split(":").map(Number);
+
+  if (modifier === "PM" && hours !== 12) hours += 12;
+  if (modifier === "AM" && hours === 12) hours = 0;
+
+  return hours * 60 + minutes;
+};
+
+const getCurrentMinutes = () => {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date());
+
+  const hours = Number(
+    parts.find((part) => part.type === "hour").value
+  );
+
+  const minutes = Number(
+    parts.find((part) => part.type === "minute").value
+  );
+
   return hours * 60 + minutes;
 };
 
 const isRestaurantOpenNow = (openingTime, closingTime) => {
-  if (!openingTime || !closingTime) return true;
-  const now = new Date();
-  const currentMinutes = now.getHours() * 60 + now.getMinutes();
   const start = parseToMinutes(openingTime);
   const end = parseToMinutes(closingTime);
-  if (start <= end) return currentMinutes >= start && currentMinutes <= end;
-  return currentMinutes >= start || currentMinutes <= end;
+
+  if (start === null || end === null || start === end) {
+    return false;
+  }
+
+  const current = getCurrentMinutes();
+
+  if (start < end) {
+    return current >= start && current < end;
+  }
+
+  // Supports overnight schedules, e.g. 18:00–02:00.
+  return current >= start || current < end;
 };
 
 const attachDynamicStatus = (restaurants = []) => {
+  if (!Array.isArray(restaurants)) return [];
+
   return restaurants.map((restaurant) => ({
     ...restaurant,
-    isOpen: isRestaurantOpenNow(restaurant.openingTime, restaurant.closingTime),
+    isOpen: isRestaurantOpenNow(
+      restaurant.openingTime,
+      restaurant.closingTime
+    ),
   }));
 };
 
+/* -----------------------------------------
+   Home component
+----------------------------------------- */
+
 function Home() {
-  const [restaurants, setRestaurants] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [restaurants, setRestaurants] = useState(() => {
+    return categoryCache.get("_") || [];
+  });
+
+  const [loading, setLoading] = useState(
+    () => !categoryCache.has("_")
+  );
 
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
-  // In-Memory Cache Store
-  const categoryCache = useRef({});
+  /* -----------------------------------------
+     Search debounce
+  ----------------------------------------- */
 
-  /* ---------------- Search Debounce ---------------- */
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(search);
@@ -63,22 +128,26 @@ function Home() {
     return () => clearTimeout(timer);
   }, [search]);
 
-  /* ---------------- Fetch Restaurants ---------------- */
-  const fetchRestaurants = useCallback(
-    async (showLoader = true, signal = null) => {
-      const cacheKey = `${debouncedSearch.trim()}_${selectedCategory}`;
+  /* -----------------------------------------
+     Fetch restaurant data
+  ----------------------------------------- */
 
-      // Check if data exists in cache
-      if (categoryCache.current[cacheKey]) {
-        setRestaurants(categoryCache.current[cacheKey]);
+  const fetchRestaurants = useCallback(
+    async (showLoader = true, signal) => {
+      const cacheKey =
+        `${debouncedSearch.trim()}_${selectedCategory}`;
+
+      // Show cached results immediately.
+      if (categoryCache.has(cacheKey)) {
+        setRestaurants(categoryCache.get(cacheKey));
         setLoading(false);
-        showLoader = false;
       } else if (showLoader) {
         setLoading(true);
       }
 
       try {
         let response;
+
         if (debouncedSearch.trim()) {
           response = await searchRestaurants(
             debouncedSearch,
@@ -86,40 +155,51 @@ function Home() {
             { signal }
           );
         } else {
-          response = await getRestaurants(selectedCategory, { signal });
+          response = await getRestaurants(
+            selectedCategory,
+            { signal }
+          );
         }
 
-        const list =
-          response?.data?.restaurants ||
-          response?.restaurants ||
-          response?.data ||
-          response ||
-          [];
+        // Supports common API response structures.
+        const payload = response?.data ?? response;
+
+        const list = Array.isArray(payload?.restaurants)
+          ? payload.restaurants
+          : Array.isArray(payload?.data?.restaurants)
+            ? payload.data.restaurants
+            : Array.isArray(payload)
+              ? payload
+              : Array.isArray(payload?.data)
+                ? payload.data
+                : [];
 
         const formattedList = attachDynamicStatus(list);
 
-        categoryCache.current[cacheKey] = formattedList;
+        categoryCache.set(cacheKey, formattedList);
         setRestaurants(formattedList);
-      } catch (err) {
+      } catch (error) {
         if (
-          err.name !== "CanceledError" &&
-          err.name !== "AbortError" &&
-          err.code !== "ERR_CANCELED"
+          error.name !== "CanceledError" &&
+          error.name !== "AbortError" &&
+          error.code !== "ERR_CANCELED"
         ) {
-          console.error("Fetch Error:", err);
+          console.error("Fetch restaurants failed:", error);
         }
       } finally {
-        if (showLoader) {
-          setLoading(false);
-        }
+        setLoading(false);
       }
     },
     [debouncedSearch, selectedCategory]
   );
 
-  /* ---------------- Initial Fetch + Race Condition Cancellation ---------------- */
+  /* -----------------------------------------
+     Fetch when search/category changes
+  ----------------------------------------- */
+
   useEffect(() => {
     const controller = new AbortController();
+
     fetchRestaurants(true, controller.signal);
 
     return () => {
@@ -127,7 +207,10 @@ function Home() {
     };
   }, [fetchRestaurants]);
 
-  /* ---------------- Poll Server Every 15 Seconds ---------------- */
+  /* -----------------------------------------
+     Background refresh
+  ----------------------------------------- */
+
   useEffect(() => {
     const interval = setInterval(() => {
       fetchRestaurants(false);
@@ -136,39 +219,76 @@ function Home() {
     return () => clearInterval(interval);
   }, [fetchRestaurants]);
 
-  /* ---------------- Update Open/Closed Status Every 10 Seconds ---------------- */
+  /* -----------------------------------------
+     Update open status every 10 seconds
+  ----------------------------------------- */
+
   useEffect(() => {
     const interval = setInterval(() => {
-      setRestaurants((prevRestaurants) => {
+      setRestaurants((previous) => {
         let changed = false;
-        const updated = prevRestaurants.map((restaurant) => {
-          const newStatus = isRestaurantOpenNow(
+
+        const updated = previous.map((restaurant) => {
+          const isOpen = isRestaurantOpenNow(
             restaurant.openingTime,
             restaurant.closingTime
           );
-          if (newStatus !== restaurant.isOpen) {
+
+          if (isOpen !== restaurant.isOpen) {
             changed = true;
-            return { ...restaurant, isOpen: newStatus };
+            return { ...restaurant, isOpen };
           }
+
           return restaurant;
         });
-        return changed ? updated : prevRestaurants;
+
+        if (changed) {
+          const cacheKey =
+            `${debouncedSearch.trim()}_${selectedCategory}`;
+
+          categoryCache.set(cacheKey, updated);
+          return updated;
+        }
+
+        return previous;
       });
     }, 10000);
 
     return () => clearInterval(interval);
+  }, [debouncedSearch, selectedCategory]);
+
+  /* -----------------------------------------
+     Restore and save scroll position
+  ----------------------------------------- */
+
+  useEffect(() => {
+    window.scrollTo(0, homeScrollPosition);
+
+    return () => {
+      homeScrollPosition = window.scrollY;
+    };
   }, []);
+
+  /* -----------------------------------------
+     Render
+  ----------------------------------------- */
 
   return (
     <div className="bg-gray-50 min-h-screen w-full overflow-x-hidden">
-      <Hero search={search} setSearch={setSearch} />
+      <Hero
+        search={search}
+        setSearch={setSearch}
+      />
 
       <CategorySlider
         selectedCategory={selectedCategory}
         setSelectedCategory={setSelectedCategory}
       />
 
-      <RestaurantList restaurants={restaurants} loading={loading} />
+      <RestaurantList
+        restaurants={restaurants}
+        loading={loading}
+      />
 
       <Footer />
     </div>
